@@ -20,20 +20,22 @@ tissue, so the difference between the input and its reconstruction is larger.
 2. Reconstruct $X'$, either with a one-step estimate
    $\hat{x}_0 = \big(x_t - \sqrt{1-\bar\alpha_t}\,\hat\epsilon\big)/\sqrt{\bar\alpha_t}$
    or with the full DDPM reverse chain $t \to 0$
-3. Compute three scores, averaged over noise levels and noise draws:
+3. Compute three scores, averaged over the noise levels:
    - **Noise-prediction MSE:** $\|\epsilon - \epsilon_\theta(x_t, t)\|^2$
    - **Reconstruction mean:** mean of the error map $|X - X'|$
    - **Reconstruction q95:** 95th percentile of the error map $|X - X'|$
 
 ## Dataset
 
-[Chest X-Ray Images (Pneumonia)](https://www.kaggle.com/datasets/paultimothymooney/chest-xray-pneumonia) (Kaggle).
+**Chest X-Ray Images** from Kermany et al., *Labeled Optical Coherence Tomography (OCT) and Chest X-Ray
+Images for Classification*, Mendeley Data, v2: https://data.mendeley.com/datasets/rscbjbr9sj/2/
 
 | Split | NORMAL | PNEUMONIA | Used for |
 |---|---|---|---|
-| train | 1,341 | — | training (NORMAL only) |
+| train | 1,349 | 3,883 (unused) | training (NORMAL only) |
 | test | 234 | 390 | evaluation |
 
+The notebook downloads and extracts `ChestXRay2017.zip` from Mendeley automatically.
 The dataset itself is **not** included in this repository.
 
 ## Setup
@@ -43,20 +45,23 @@ The dataset itself is **not** included in this repository.
 | Model | `deepinv.models.DiffUNet` (1 input / 1 output channel), trained from scratch |
 | Input | 32×32 grayscale, range [0, 1] |
 | Optimizer | Adam, lr = 1e-4, batch size 32 |
-| Training | 100 epochs on NORMAL images only |
-| Hardware | Kaggle GPU |
+| Training | 100 epochs on NORMAL images only (~4,300 steps) |
+| Hardware | Kaggle, NVIDIA Tesla T4 |
 
 ## Results (test set)
 
 **AUROC**
 
-| Score | One-step reconstruction | Full reverse chain + blurred, cropped error map |
+| Score | Config A: one-step $\hat{x}_0$, 4 noise draws, raw error map | Config B: full reverse chain, 1 noise draw, blurred ($\sigma = 1.5$) + cropped (2 px) error map |
 |---|---|---|
 | Noise-prediction MSE | 0.668 | 0.654 |
 | Reconstruction mean | 0.661 | 0.638 |
 | Reconstruction q95 | 0.650 | 0.655 |
 
-**Operating point** (threshold = 95th percentile of NORMAL scores, i.e. ~5% false-positive rate; full-chain run)
+The notebook contains Config B. Config A comes from an earlier run of the same code with
+`FULL_CHAIN = False`, `N_SAMPLES = 4` and no blur/crop.
+
+**Operating point** (Config B; threshold = 95th percentile of NORMAL scores, i.e. ~5% false-positive rate)
 
 | Score | Precision | Recall | Specificity | AP (baseline 0.625) |
 |---|---|---|---|---|
@@ -72,7 +77,7 @@ image borders) rather than from the disease itself.
 ## Limitations
 
 - **Low resolution:** at 32×32, much of the fine opacity texture is lost.
-- **Short training:** ~4,200 optimization steps, without EMA weights.
+- **Short training:** ~4,300 optimization steps, without EMA weights.
 - **Tuning on the test set:** the noise level, scoring choices and threshold were selected on the
   test set (no held-out normals), so the reported numbers are slightly optimistic.
 - **Possible acquisition bias:** the dataset is pediatric, and the classes differ in acquisition
@@ -90,16 +95,23 @@ image borders) rather than from the disease itself.
 
 ## Usage
 
-1. Download the dataset from Kaggle into `data/chest_xray/`.
-2. Run the notebook `X-ray_chest_analysis.ipynb`:
-   - **Training:** trains the DDPM on `train/NORMAL` and saves `trained_diffusion_model.pth`.
-   - **Evaluation:** scores `test/NORMAL` and `test/PNEUMONIA`, and reports AUROC,
-     precision/recall/AP, histograms and error heatmaps.
+Run `x-ray-chest-analysis.ipynb` on Kaggle with a GPU. It runs end to end:
 
-**Requirements:** `torch`, `torchvision`, `deepinv`, `scikit-learn`, `numpy`, `matplotlib`
+1. **Data:** downloads `ChestXRay2017.zip` from Mendeley and extracts it to `./data/chest_xray/`.
+2. **Training:** trains the DDPM on `train/NORMAL`, plots the loss curve and saves `trained_diffusion_model.pth`.
+3. **Sampling:** generates 32 synthetic NORMAL chest X-rays from pure noise (`generated_normal_xrays.png`).
+4. **Evaluation:** scores `test/NORMAL` and `test/PNEUMONIA`, and reports AUROC, precision/recall/AP,
+   histograms and error heatmaps.
+
+To run outside Kaggle, update the `/kaggle/working/...` paths in the notebook to your local directory.
+
+**Requirements:** `torch`, `torchvision`, `deepinv==0.5.0`, `scikit-learn`, `imbalanced-learn`,
+`numpy`, `matplotlib`, `pillow`, `requests`
 
 ## References
 
+- Kermany, Goldbaum, et al. *Identifying Medical Diagnoses and Treatable Diseases by Image-Based Deep Learning.* Cell 172(5), 2018.
+- Kermany, Zhang, Goldbaum. *Labeled Optical Coherence Tomography (OCT) and Chest X-Ray Images for Classification.* Mendeley Data, v2, 2018. doi:10.17632/rscbjbr9sj.2
 - Ho, Jain, Abbeel. *Denoising Diffusion Probabilistic Models.* NeurIPS 2020.
 - Wyatt et al. *AnoDDPM: Anomaly Detection with Denoising Diffusion Probabilistic Models using Simplex Noise.* CVPR Workshops 2022.
 - [DeepInverse](https://deepinv.github.io/) library.
